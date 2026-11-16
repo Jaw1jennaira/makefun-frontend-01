@@ -11,9 +11,10 @@
 // on screen, so a screenshot script knows when to capture.
 
 import { apiStats, getBounties, getBounty, getLeaderboard, getProfile } from './api.js';
-import { timeLeft } from './format.js';
+import { money, timeLeft } from './format.js';
 import {
   boardRows,
+  boardTotals,
   boardView,
   bountyView,
   errorView,
@@ -40,6 +41,7 @@ setInterval(tickCountdowns, 30_000);
 let boardItems = [];
 let boardQuery = '';
 let boardSort = 'pot';
+let boardFilter = 'all';
 
 function sortBoard(items) {
   const by = {
@@ -53,11 +55,15 @@ function sortBoard(items) {
 
 function filteredBoard() {
   const q = boardQuery.trim().toLowerCase();
-  const items = q
-    ? boardItems.filter((b) =>
-        [b.title, b.summary, b.category, (b.skills || []).join(' ')].join(' ').toLowerCase().includes(q),
-      )
-    : boardItems;
+  let items = boardItems;
+  if (boardFilter === 'open') items = items.filter((b) => new Date(b.deadline).getTime() > Date.now());
+  else if (boardFilter === 'closing') items = items.filter((b) => new Date(b.deadline).getTime() > Date.now() && new Date(b.deadline).getTime() - Date.now() < 86400000);
+  else if (boardFilter === 'free') items = items.filter((b) => !b.entryFeeUsd);
+  if (q) {
+    items = items.filter((b) =>
+      [b.title, b.summary, b.category, (b.skills || []).join(' ')].join(' ').toLowerCase().includes(q),
+    );
+  }
   return sortBoard(items);
 }
 
@@ -69,6 +75,12 @@ function paintBoardList() {
   const items = filteredBoard();
   list.innerHTML = boardRows(items);
   if (count) count.textContent = `${items.length} of ${boardItems.length} bounties`;
+  const totals = boardTotals(boardItems);
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('hero-pot', money(totals.potUsd));
+  set('hero-open', String(totals.open));
+  set('hero-entries', totals.entries.toLocaleString('en-US'));
+  set('hero-closing', String(totals.closing));
   if (note) note.textContent = `Live from the make.fun API · ${apiStats.requests} request${apiStats.requests === 1 ? '' : 's'} this session (${apiStats.cached} served from cache, ${apiStats.revalidated} revalidated).`;
 }
 
@@ -88,6 +100,17 @@ function wireBoard() {
       boardSort = sort.value;
       paintBoardList();
     });
+  }
+  const filters = document.getElementById('board-filters');
+  if (filters) {
+    for (const btn of filters.querySelectorAll('[data-filter]')) {
+      btn.classList.toggle('active', btn.getAttribute('data-filter') === boardFilter);
+      btn.addEventListener('click', () => {
+        boardFilter = btn.getAttribute('data-filter');
+        for (const b of filters.querySelectorAll('[data-filter]')) b.classList.toggle('active', b === btn);
+        paintBoardList();
+      });
+    }
   }
 }
 

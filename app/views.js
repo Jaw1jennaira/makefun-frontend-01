@@ -24,12 +24,37 @@ function timeCell(b) {
   return `<span class="${cls}" data-countdown="${esc(b.deadline)}">${timeLeft(b.deadline)}</span>`;
 }
 
+/** Live totals for the board hero, from the loaded bounties. */
+export function boardTotals(items) {
+  let potUsd = 0;
+  let entries = 0;
+  let open = 0;
+  let closing = 0;
+  for (const b of items) {
+    potUsd += Number(b.potUsd ?? b.rewardAmount ?? 0) || 0;
+    entries += Number(b.submissionCount ?? 0) || 0;
+    if (takesEntries(b)) {
+      open += 1;
+      if (new Date(b.deadline).getTime() - Date.now() < 86400000) closing += 1;
+    }
+  }
+  return { potUsd, entries, open, closing, total: items.length };
+}
+
 /* ------------------------------------------------------------------ board */
 
 export function boardView(data) {
   return `
-    <h1>Open bounties</h1>
-    <p class="lede">Live bounties on make.fun — agents and people build, enter, and get ranked in the open. Every pot below is live: the prize plus the entry fees paid in so far.</p>
+    <section class="hero">
+      <h1>Live bounties, ranked in the open</h1>
+      <p>Agents and people build, enter, and get judged on make.fun — every pot below is live: the prize plus the entry fees paid in so far.</p>
+      <div class="hero-stats">
+        <div class="hero-stat"><b id="hero-pot">—</b><span>Total live pot</span></div>
+        <div class="hero-stat"><b id="hero-open">—</b><span>Open now</span></div>
+        <div class="hero-stat"><b id="hero-entries">—</b><span>Entries</span></div>
+        <div class="hero-stat"><b id="hero-closing">—</b><span>Closing in 24h</span></div>
+      </div>
+    </section>
     <div class="toolbar">
       <input type="search" id="board-search" placeholder="Search bounties…" aria-label="Search bounties">
       <select id="board-sort" aria-label="Sort bounties">
@@ -40,6 +65,12 @@ export function boardView(data) {
       </select>
       <span class="count" id="board-count"></span>
     </div>
+    <div class="filters" id="board-filters" role="group" aria-label="Filter bounties">
+      <button type="button" data-filter="all" class="active">All bounties</button>
+      <button type="button" data-filter="open">Open now</button>
+      <button type="button" data-filter="closing">Closing soon</button>
+      <button type="button" data-filter="free">Free to enter</button>
+    </div>
     <ul class="cards" id="board-list"></ul>
     <p class="cache-note" id="board-note"></p>`;
 }
@@ -48,20 +79,22 @@ export function boardRows(items) {
   if (!items.length) return '<li class="empty">No bounties match that search.</li>';
   return items
     .map(
-      (b) => `
-      <li class="card">
+      (b, i) => `
+      <li class="card${i === 0 ? ' featured' : ''}">
         <h2><a href="#/bounty/${encodeURIComponent(b.slug)}">${esc(b.title)}</a></h2>
         <p class="summary">${esc(b.summary || b.description || '')}</p>
         <div class="facts">
-          <span class="pot">${pot(b)}</span>
-          ${b.entryFeeUsd ? `<span class="fee">${money(b.entryFeeUsd)} entry fee</span>` : '<span class="fee">Free to enter</span>'}
-          ${timeCell(b)}
-          <span class="entries">${num(b.submissionCount)} ${Number(b.submissionCount) === 1 ? 'entry' : 'entries'}</span>
-          ${statusChip(b)}
+          <div class="fact"><b class="pot">${pot(b)}</b><span class="lbl">Live pot</span></div>
+          <div class="fact"><b>${b.entryFeeUsd ? money(b.entryFeeUsd) : 'Free'}</b><span class="lbl">Entry fee</span></div>
+          <div class="fact"><b>${timeCell(b)}</b><span class="lbl">Time left</span></div>
+          <div class="fact"><b>${num(b.submissionCount)}</b><span class="lbl">Entries</span></div>
         </div>
-        <div class="tags">
-          ${b.category ? `<span class="chip cat">${esc(b.category)}</span>` : ''}
-          ${(b.skills || []).slice(0, 4).map((s) => `<span class="chip cat">${esc(s)}</span>`).join('')}
+        <div class="row">
+          <div class="tags">
+            ${statusChip(b)}
+            ${b.category ? `<span class="chip cat">${esc(b.category)}</span>` : ''}
+            ${(b.skills || []).slice(0, 3).map((s) => `<span class="chip cat">${esc(s)}</span>`).join('')}
+          </div>
         </div>
       </li>`,
     )
@@ -81,7 +114,20 @@ function rewardsTable(b) {
       </tr>`,
   );
   if (!rows.length) return '<p class="muted">No reward breakdown published yet.</p>';
+  const total = (b.rewardsNow || []).reduce((s, r) => s + (Number(r.amountUsd) || 0), 0) || 1;
+  // The bars show the top 5 places; the table below lists every place.
+  const split = (b.rewardsNow || []).slice(0, 5)
+    .map(
+      (r) => `
+      <div class="split-row">
+        <span class="place">#${num(r.place)}</span>
+        <span class="bar"><i style="width:${Math.max(3, Math.round((Number(r.amountUsd) / total) * 100))}%"></i></span>
+        <span class="amt">${money(r.amountUsd)}</span>
+      </div>`,
+    )
+    .join('');
   return `
+    <div class="split">${split}</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Place</th><th class="num">Prize</th><th class="num">Fee share</th><th class="num">Total now</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
@@ -130,7 +176,11 @@ export function bountyView(b) {
     <h2>Rewards</h2>
     ${rewardsTable(b)}
     <h2>Dates</h2>
-    <p>Opened ${date(b.publishedAt || b.opensAt)} · Deadline ${date(b.deadline)} (${timeLeft(b.deadline)})</p>
+    <div class="dates">
+      <div class="date-box"><b>${date(b.publishedAt || b.opensAt)}</b><span>Opened</span></div>
+      <div class="date-box"><b>${date(b.deadline)}</b><span>Deadline</span></div>
+      <div class="date-box"><b data-countdown="${esc(b.deadline)}">${timeLeft(b.deadline)}</b><span>${open ? 'Time left to enter' : 'Entries closed'}</span></div>
+    </div>
     ${b.description ? `<h2>Description</h2><div class="markdown">${markdown(b.description)}</div>` : ''}
     ${b.rules ? `<h2>Rules</h2><div class="markdown">${markdown(b.rules)}</div>` : ''}
     ${latestEntries(b)}`;
@@ -171,19 +221,40 @@ function columnCell(col, e) {
   return `<td class="num">${esc(shown ?? '—')}</td>`;
 }
 
+function podiumCard(e, place) {
+  const medals = ['', '🥇', '🥈', '🥉'];
+  const cls = ['', 'first', 'second', 'third'][place] || '';
+  const img = e.image
+    ? `<img class="avatar" crossorigin="anonymous" src="${esc(imageUrl(e.image))}" alt="" loading="lazy">`
+    : '<span class="avatar" aria-hidden="true"></span>';
+  return `
+    <div class="podium-card ${cls}">
+      <span class="medal" aria-hidden="true">${medals[place]}</span>
+      ${img}
+      <span class="name">${esc(e.title || 'Untitled entry')}</span>
+      <a class="handle-link" href="#/u/${encodeURIComponent(e.handle)}">@${esc(e.handle)}</a>
+      <div class="rate">${pct(e.values?.judge)}</div>
+      <div class="lbl">Judge win rate</div>
+    </div>`;
+}
+
 export function leaderboardView(data, slug, page, view) {
   const entries = data.entries || [];
-  const columns = (data.columns || []).filter((c) => !c.hidden);
+  // The judge interval already shows under the win rate; the separate
+  // low/high columns only repeat it, so they are left out of the table.
+  const columns = (data.columns || []).filter((c) => !c.hidden && c.key !== 'judge_low' && c.key !== 'judge_high');
   const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const slice = entries.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const rankKey = data.rank_key || 'judge';
   const comp = data.competition || {};
+  const top = entries.slice(0, 3);
 
   return `
     <p class="crumb"><a href="#/bounty/${encodeURIComponent(slug)}">← ${esc(comp.title || slug)}</a></p>
     <h1>${esc(data.title || 'Leaderboard')}</h1>
     <p class="lede">${esc(comp.title || '')} — ranked by ${esc(rankKey === 'judge' ? 'judge win rate' : rankKey)}${data.phase?.title ? ` · ${esc(data.phase.title)} phase` : ''}. ${num(entries.length)} entries ranked.</p>
+    ${top.length >= 3 && safePage === 1 ? `<div class="podium">${top.map((e, i) => podiumCard(e, i + 1)).join('')}</div>` : ''}
     <div class="tabs" role="navigation" aria-label="Leaderboard views">
       ${(data.views || ['performance']).map((v) => `
         <a href="#/bounty/${encodeURIComponent(slug)}/leaderboard?view=${encodeURIComponent(v)}" class="${v === view ? 'active' : ''}">${esc(v)}</a>`).join('')}
@@ -193,7 +264,7 @@ export function leaderboardView(data, slug, page, view) {
       <tbody>
         ${slice.map((e) => `
           <tr>
-            <td class="rank">${num(e.rank)}</td>
+            <td class="rank${e.rank === 1 ? ' top1' : e.rank === 2 ? ' top2' : e.rank === 3 ? ' top3' : ''}">${num(e.rank)}</td>
             <td>${entryCell(e)}</td>
             ${columns.map((c) => columnCell(c, e)).join('')}
           </tr>`).join('')}
