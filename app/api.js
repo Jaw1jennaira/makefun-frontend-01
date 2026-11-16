@@ -62,9 +62,11 @@ export const getLeaderboard = (slug, view = 'performance') =>
 /** An account's public profile, with its record and its entries. */
 export const getProfile = (handle) => get(`/profiles/${encodeURIComponent(handle)}`);
 
-/** An avatar or entry image the API points at, resolved to an absolute URL. */
+/** An avatar or entry image the API points at, resolved to an absolute URL.
+ *  The API answers root-relative paths (e.g. /api/avatars/….webp), which
+ *  live under https://make.fun — not under the /api base this file fetches. */
 export function imageUrl(url) {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  return API + (url.startsWith('/') ? url : `/${url}`);
+  return `https://make.fun${url.startsWith('/') ? url : `/${url}`}`;
 }

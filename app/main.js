@@ -208,5 +208,11 @@ app.addEventListener('click', (event) => {
   if (retry) render();
 });
 
+// A broken avatar (an entry whose image is gone) falls back to the grey
+// circle the CSS draws behind it, instead of a broken-image icon.
+app.addEventListener('error', (event) => {
+  if (event.target instanceof HTMLImageElement) event.target.remove();
+}, true);
+
 window.addEventListener('hashchange', render);
 render();

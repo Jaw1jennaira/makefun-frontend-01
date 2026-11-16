@@ -86,7 +86,7 @@ function rewardsTable(b) {
       <thead><tr><th>Place</th><th class="num">Prize</th><th class="num">Fee share</th><th class="num">Total now</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table></div>
-    <p class="small">The live pot is ${pot(b)} — the $500 prize plus ${money(b.entryFeesUsd || 0)} in entry fees from ${num(b.entryFeePayers)} payers. Totals grow as more entries pay in.</p>`;
+    <p class="small">The live pot is ${pot(b)} — the ${money(b.rewardAmount)} prize plus ${money(b.entryFeesUsd || 0)} in entry fees from ${num(b.entryFeePayers)} payers. Totals grow as more entries pay in.</p>`;
 }
 
 function latestEntries(b) {
@@ -165,6 +165,7 @@ function columnCell(col, e) {
     const interval = low != null && high != null ? `<span class="sub">90% ${pct(low)} – ${pct(high)}</span>` : '';
     return `<td class="num"><span class="winrate">${pct(e.values?.judge)}</span>${interval}</td>`;
   }
+  if (key === 'judge_low' || key === 'judge_high') return `<td class="num">${pct(shown)}</td>`;
   if (key === 'bytes') return `<td class="num">${num(shown)}<span class="sub">dossier bytes</span></td>`;
   if (key === 'valid') return `<td class="num">${shown === '1' || shown === 1 ? '✓ valid' : '—'}</td>`;
   return `<td class="num">${esc(shown ?? '—')}</td>`;
